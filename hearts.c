@@ -15,6 +15,7 @@
 #define HEART_ON(x)       (PORTB |= (1<<(x)))
 #define HEART_OFF(x)       (PORTB &= ~(1<<(x)))
 #define HEART_CONFIG     (DDRB |= (1<<HEART1) | (1<<HEART2) | (1<<HEART3))
+#define BUTTON          PINA7
 
 #define ADC_ENABLE  (ADCSRA |= (1<<ADEN))
 #define ADC_DISABLE  (ADCSRA &= ~(1<<ADEN))
@@ -39,6 +40,8 @@ void init(void) {
     HEART_CONFIG;
     clock_prescale_set(0);
     ADC_ENABLE;
+    DDRA &= ~(1<<BUTTON); // input
+    PORTA |= (1<<BUTTON); // Pull up please
 }
 
 void play_pattern_1() {
@@ -53,6 +56,21 @@ void play_pattern_1() {
     _delay_ms(delay);
 }
 
+void play_pattern_2() {
+    HEART_ON(HEART1);
+    HEART_OFF(HEART2);
+    HEART_ON(HEART3);
+    _delay_ms(delay);
+    HEART_ON(HEART1);
+    HEART_ON(HEART2);
+    HEART_OFF(HEART3);
+    _delay_ms(delay);
+    HEART_OFF(HEART1);
+    HEART_ON(HEART2);
+    HEART_ON(HEART3);
+    _delay_ms(delay);
+}
+
 // scale the adc reading to 0ms-500ms (ish)
 unsigned int read_scaled_pot() {
     init_adc_regular(0);
@@ -63,9 +81,19 @@ unsigned int read_scaled_pot() {
 
 int main(void) {
     init();
+    char state = 1;
     while (1) {
         delay = read_scaled_pot();
-        play_pattern_1();
+        if (PINA & (1<<PINA7)) {
+            state = 2;
+        } else {
+            state = 1;
+        }
+        switch(state) {
+        case 1: play_pattern_1(); break;
+        case 2: play_pattern_2(); break;
+        default: play_pattern_1();
+        }
     }
 }
 
