@@ -21,7 +21,10 @@
 #define ADC_DISABLE  (ADCSRA &= ~(1<<ADEN))
 #define VREF_VCC  0
 
+#define DEBOUNCE 200  // 200Hz debounce clock
+
 unsigned int delay = 100;
+static volatile uint8_t button_state;
 
 void init_adc_regular(uint8_t muxBits) {
     ADMUX = VREF_VCC | muxBits;
@@ -41,7 +44,12 @@ void init(void) {
     clock_prescale_set(0);
     ADC_ENABLE;
     DDRA &= ~(1<<BUTTON); // input
+    DDRA |= (1<<PINA2);  // output for the state indicator led
     PORTA |= (1<<BUTTON); // Pull up please
+    
+    TCCR1B = (1<<WGM12) | (1<<CS10);  // clear timer on compare match, no prescaler
+    OCR1A  =  F_CPU/DEBOUNCE;         // timer = 5 msec  this is 40k, hence needing the 16 bit timer
+    TIMSK1  = (1<<OCIE1A);            // enable Output Compare 1 overflow interrupt
 }
 
 void play_pattern_1() {
@@ -71,6 +79,27 @@ void play_pattern_2() {
     _delay_ms(delay);
 }
 
+ISR(SIG_OUTPUT_COMPARE1A) {
+    static int count = 0;
+    static int last = 0;
+    int real = (PORTA & PINA7);
+    if (real) {
+        real = 1;
+    } else {
+        real = 0;
+    }
+    // button state gets a zero if the button is pressed.
+    if (last ^ real) {
+        count = 0;
+    } else {
+        count++;
+    }
+    if (count > 4) {
+        button_state = 1;
+    }
+    last = real;
+}
+
 // scale the adc reading to 0ms-500ms (ish)
 unsigned int read_scaled_pot() {
     init_adc_regular(0);
@@ -78,20 +107,35 @@ unsigned int read_scaled_pot() {
     return tmp >> 1;
 }
 
+int is_button_pressed() {
+    if (button_state) {
+        //button_state = 0;
+        return 1;
+    } 
+    return 0;
+}
 
 int main(void) {
     init();
     char state = 1;
     while (1) {
         delay = read_scaled_pot();
-        if (PINA & (1<<PINA7)) {
-            state = 2;
-        } else {
-            state = 1;
+        if (is_button_pressed()) {
+            state++;
+            // exciting, only two patterns :)
+            if (state > 2) {
+                state = 1;
+            }
         }
         switch(state) {
-        case 1: play_pattern_1(); break;
-        case 2: play_pattern_2(); break;
+        case 1:
+            PORTA |= (1<<PINA2);
+            play_pattern_1(); 
+            break;
+        case 2:
+            PORTA &= ~(1<<PINA2);
+            play_pattern_2();
+            break;
         default: play_pattern_1();
         }
     }
